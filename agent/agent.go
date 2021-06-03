@@ -24,6 +24,14 @@ type Agent struct {
 	o    *Option
 	c    *cast.Cast
 	stop chan struct{}
+	done chan struct{}
+}
+
+func WithCollectorAddr(addr string) func(option *Option) error {
+	return func(option *Option) error {
+		option.CollectorAddr = addr
+		return nil
+	}
 }
 
 func New(ff ...func(option *Option) error) (*Agent, error) {
@@ -59,6 +67,7 @@ func New(ff ...func(option *Option) error) (*Agent, error) {
 		o:    option,
 		c:    c,
 		stop: make(chan struct{}),
+		done: make(chan struct{}),
 	}
 	return agent, nil
 }
@@ -73,6 +82,8 @@ func adjust(t time.Duration) time.Duration {
 }
 
 func (a *Agent) onSchedule(ctx context.Context) {
+	defer close(a.done)
+
 	var ll = []profile.Type{
 		profile.TypeCPU,
 		profile.TypeHeap,
@@ -106,6 +117,7 @@ func (a *Agent) onSchedule(ctx context.Context) {
 			}
 		case <-ti.C:
 			{
+				fmt.Println("timer fires: ", time.Now())
 				profileType := r.Value.(profile.Type)
 				switch profileType {
 				case profile.TypeCPU:
@@ -120,8 +132,13 @@ func (a *Agent) onSchedule(ctx context.Context) {
 					profile.TypeMutex,
 					profile.TypeGoroutine,
 					profile.TypeThreadCreate:
-					if err := pprof.Lookup(profileType.String()).WriteTo(&buf, 0); err != nil {
-						log.Println("fail to start heap profile: ", err)
+					p := pprof.Lookup(profileType.String())
+					if p == nil {
+						log.Println("fail to look up profile")
+						return
+					}
+					if err := p.WriteTo(&buf, 0); err != nil {
+						log.Println("fail to write profile: ", err)
 						return
 					}
 				}
@@ -131,9 +148,11 @@ func (a *Agent) onSchedule(ctx context.Context) {
 
 				buf.Reset()
 				r = r.Next()
-				if r == profile.TypeCPU {
+				if r.Value.(profile.Type) == profile.TypeCPU {
 					ti.Reset(adjust(a.o.BreakPeriod))
 				}
+
+				ti.Reset(adjust(0))
 			}
 
 		}
@@ -160,5 +179,6 @@ func block(ctx context.Context, t time.Duration) {
 
 func (a *Agent) Stop() error {
 	close(a.stop)
+	<-a.done
 	return nil
 }

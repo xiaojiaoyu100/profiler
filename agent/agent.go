@@ -35,10 +35,11 @@ func WithCollectorAddr(addr string) func(option *Option) error {
 }
 
 func New(ff ...func(option *Option) error) (*Agent, error) {
-	option := &Option{}
-	option.goVersion = runtime.Version()
-	option.BreakPeriod = defaultBreakPeriod
-	option.CPUProfilingPeriod = defaultCPUProfilingPeriod
+	option := &Option{
+		goVersion: runtime.Version(),
+		BreakPeriod: defaultBreakPeriod,
+		CPUProfilingPeriod: defaultCPUProfilingPeriod
+	}
 
 	for _, f := range ff {
 		if err := f(option); err != nil {

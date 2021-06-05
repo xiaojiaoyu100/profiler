@@ -6,14 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/sirupsen/logrus"
-	"github.com/xiaojiaoyu100/cast"
-	"github.com/xiaojiaoyu100/profiler/profile"
 	"log"
 	"math/rand"
 	"runtime"
 	"runtime/pprof"
 	"time"
+
+	"github.com/sirupsen/logrus"
+	"github.com/xiaojiaoyu100/cast"
+	"github.com/xiaojiaoyu100/profiler/profile"
 )
 
 const (
@@ -27,18 +28,20 @@ type Agent struct {
 	done chan struct{}
 }
 
-func WithCollectorAddr(addr string) func(option *Option) error {
+type OptionFunc func(option *Option) error
+
+func WithCollectorAddr(addr string) OptionFunc {
 	return func(option *Option) error {
 		option.CollectorAddr = addr
 		return nil
 	}
 }
 
-func New(ff ...func(option *Option) error) (*Agent, error) {
+func New(ff ...OptionFunc) (*Agent, error) {
 	option := &Option{
-		goVersion: runtime.Version(),
-		BreakPeriod: defaultBreakPeriod,
-		CPUProfilingPeriod: defaultCPUProfilingPeriod
+		goVersion:          runtime.Version(),
+		BreakPeriod:        defaultBreakPeriod,
+		CPUProfilingPeriod: defaultCPUProfilingPeriod,
 	}
 
 	for _, f := range ff {
@@ -178,8 +181,7 @@ func block(ctx context.Context, t time.Duration) {
 	}
 }
 
-func (a *Agent) Stop() error {
+func (a *Agent) Stop() {
 	close(a.stop)
 	<-a.done
-	return nil
 }

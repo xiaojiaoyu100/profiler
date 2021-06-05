@@ -177,8 +177,7 @@ func block(ctx context.Context, t time.Duration) {
 	}
 }
 
-func (a *Agent) Stop() error {
+func (a *Agent) Stop() {
 	close(a.stop)
 	<-a.done
-	return nil
 }

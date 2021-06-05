@@ -5,7 +5,7 @@ import "fmt"
 type Type int
 
 const (
-	TypeUnknown Type =  iota
+	TypeUnknown Type = iota
 	TypeCPU
 	TypeHeap
 	TypeBlock

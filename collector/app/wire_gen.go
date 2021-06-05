@@ -3,7 +3,7 @@
 //go:generate go run github.com/google/wire/cmd/wire
 //+build !wireinject
 
-package collector
+package app
 
 import (
 	"github.com/xiaojiaoyu100/profiler/collector/server"

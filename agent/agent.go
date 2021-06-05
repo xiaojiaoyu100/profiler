@@ -6,14 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/sirupsen/logrus"
-	"github.com/xiaojiaoyu100/cast"
-	"github.com/xiaojiaoyu100/profiler/profile"
 	"log"
 	"math/rand"
 	"runtime"
 	"runtime/pprof"
 	"time"
+
+	gprofile "github.com/google/pprof/profile"
+	"github.com/sirupsen/logrus"
+	"github.com/xiaojiaoyu100/cast"
+	"github.com/xiaojiaoyu100/profiler/profile"
 )
 
 const (
@@ -144,7 +146,15 @@ func (a *Agent) onSchedule(ctx context.Context) {
 				}
 
 				log.Printf("[%s]", profileType.String())
+
 				log.Println(buf.String())
+
+				pp, err := gprofile.ParseData(buf.Bytes())
+				if err != nil {
+					fmt.Println("parse data: ", err)
+					return
+				}
+				log.Println(pp.String())
 
 				buf.Reset()
 				r = r.Next()

@@ -1,6 +1,6 @@
 // +build wireinject
 
-package collector
+package app
 
 import (
 	"github.com/google/wire"
@@ -16,7 +16,7 @@ func Setters(logger *zap.Logger, server *server.HttpServer) []Setter {
 	}
 }
 
-func InitializeApp() (*App, func(), error) {
+func InitializeApp(config *ACMConfig) (*App, func(), error) {
 	panic(
 		wire.Build(
 			log.NewLogger,

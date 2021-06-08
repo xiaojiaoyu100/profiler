@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,19 +22,16 @@ type Option struct {
 }
 
 type HttpServer struct {
-	option Option
+	option *Option
 	engine *gin.Engine
 	logger *zap.Logger
-}
-
-func Setters(logger *zap.Logger) []Setter {
-	return []Setter{
-		WithLogger(logger),
-	}
+	wait   chan struct{}
 }
 
 func New(setters ...Setter) (*HttpServer, error) {
-	s := &HttpServer{}
+	s := &HttpServer{
+		wait: make(chan struct{}),
+	}
 	for _, setter := range setters {
 		if err := setter(s); err != nil {
 			return nil, err
@@ -50,14 +47,28 @@ func WithLogger(logger *zap.Logger) Setter {
 	}
 }
 
+func WithOption(option *Option) Setter {
+	return func(server *HttpServer) error {
+		server.option = option
+		return nil
+	}
+}
+
+func (s *HttpServer) Init() {
+	go func() {
+		s.wait <- struct{}{}
+	}()
+}
+
 func (s *HttpServer) Run() error {
+	<-s.wait
 	srv := &http.Server{
 		Addr:    s.option.Addr,
 		Handler: s.engine,
 	}
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
-			log.Printf("listen: %s\n", err)
+			s.logger.Warn(fmt.Sprintf("listen and serve err"), zap.Error(err))
 		}
 	}()
 
@@ -70,9 +81,10 @@ func (s *HttpServer) Run() error {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		s.logger.Fatal(fmt.Sprintf("listen and serve err"), zap.Error(err))
 	}
 
-	log.Println("Server exiting")
+	s.logger.Debug(fmt.Sprintf("server exiting..."))
+
 	return nil
 }

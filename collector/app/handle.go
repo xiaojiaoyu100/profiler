@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
+	"github.com/xiaojiaoyu100/profiler/collector/config/tablestoreconfig"
+
 	"github.com/xiaojiaoyu100/profiler/collector/env"
 
 	"github.com/xiaojiaoyu100/profiler/collector/server/engine"
@@ -13,11 +16,9 @@ import (
 	"github.com/xiaojiaoyu100/profiler/collector/server"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/config"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/info"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/observer"
-	"github.com/xiaojiaoyu100/profiler/collector/config/influxdbconfig"
 	"github.com/xiaojiaoyu100/profiler/collector/config/ossconfig"
 	"go.uber.org/zap"
 )
@@ -67,9 +68,9 @@ func initHttpServer(a *App) observer.Handler {
 	}
 }
 
-func initInfluxDBClient(a *App) observer.Handler {
+func initTablestoreClient(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
-		dataID := influxdbconfig.DataID
+		dataID := tablestoreconfig.DataID
 
 		cc, ok := coll[info.Info{
 			Group:  a.ACMGroup(),
@@ -79,14 +80,15 @@ func initInfluxDBClient(a *App) observer.Handler {
 			a.Logger().Debug(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
 			return
 		}
-		c := &influxdbconfig.InfluxDBConfig{}
+		c := &tablestoreconfig.TablestoreConfig{}
 		if err := json.Unmarshal(cc.Content, c); err != nil {
 			a.Logger().Warn(fmt.Sprintf("fail to unmarshal, group = %s, dataID = %s", a.ACMGroup(), dataID), zap.Error(err))
 			return
 		}
-		client := influxdb2.NewClient(c.ServerURL, c.AuthToken)
 
-		env.Instance().SetInfluxDBClient(&client)
+		client := tablestore.NewClient(c.EndPoint, c.InstanceName, c.AccessKeyId, c.AccessKeySecret)
+
+		env.Instance().SetTablestoreClient(client)
 	}
 }
 

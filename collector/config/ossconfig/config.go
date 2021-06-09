@@ -5,9 +5,9 @@ const (
 )
 
 type Config struct {
-	Endpoint        string
-	AccessKeyID     string
-	AccessKeySecret string
-	Bucket          string
-	PathPrefix      string
+	Endpoint        string `json:"ebdpoint"`
+	AccessKeyID     string `json:"access_key_id"`
+	AccessKeySecret string `json:"access_key_secret"`
+	Bucket          string `json:"bucket"`
+	PathPrefix      string `json:"path_prefix"`
 }

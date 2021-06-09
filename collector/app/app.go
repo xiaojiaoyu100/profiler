@@ -6,6 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/xiaojiaoyu100/profiler/collector/config/tablestoreconfig"
+
 	"github.com/xiaojiaoyu100/profiler/collector/config/serverconfig"
 
 	"github.com/xiaojiaoyu100/profiler/collector/config/ossconfig"
@@ -16,7 +18,6 @@ import (
 	aliacm "github.com/xiaojiaoyu100/aliyun-acm/v2"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/info"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/observer"
-	"github.com/xiaojiaoyu100/profiler/collector/config/influxdbconfig"
 	"github.com/xiaojiaoyu100/profiler/collector/server"
 	"go.uber.org/zap"
 )
@@ -122,7 +123,7 @@ func (a *App) registerObserverList() error {
 
 	create(initHttpServer(a), info.Info{Group: a.acmOption.Group, DataID: serverconfig.DataID})
 	create(initOSSClient(a), info.Info{Group: a.acmOption.Group, DataID: ossconfig.DataID})
-	create(initInfluxDBClient(a), info.Info{Group: a.acmOption.Group, DataID: influxdbconfig.DataID})
+	create(initTablestoreClient(a), info.Info{Group: a.acmOption.Group, DataID: tablestoreconfig.DataID})
 
 	if err != nil {
 		a.logger.Debug("fail to create observers", zap.Error(err))

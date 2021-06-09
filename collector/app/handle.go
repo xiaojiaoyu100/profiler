@@ -3,6 +3,11 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/xiaojiaoyu100/profiler/collector/env"
+
+	"github.com/xiaojiaoyu100/profiler/collector/server/engine"
 
 	"github.com/xiaojiaoyu100/profiler/collector/config/serverconfig"
 	"github.com/xiaojiaoyu100/profiler/collector/server"
@@ -19,6 +24,8 @@ import (
 
 func initHttpServer(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
+		a.Logger().Debug("about to start server ")
+
 		dataID := serverconfig.DataID
 
 		cc, ok := coll[info.Info{
@@ -34,19 +41,29 @@ func initHttpServer(a *App) observer.Handler {
 			a.Logger().Warn(fmt.Sprintf("fail to unmarshal, group = %s, dataID = %s", a.ACMGroup(), dataID), zap.Error(err))
 			return
 		}
+
+		en := engine.Routes(engine.Engine(env.Instance()))
+
 		httpServer, err := server.New(
 			server.WithLogger(a.Logger()),
 			server.WithOption(&server.Option{
 				Addr:            c.Addr,
-				ShutdownTimeout: c.ShutdownTimeout,
+				ShutdownTimeout: time.Duration(c.ShutdownTimeout) * time.Second,
 			}),
+			server.WithEngine(en),
 		)
 		if err != nil {
 			a.Logger().Warn(fmt.Sprintf("fail to create a http server, group = %s, dataID = %s", a.ACMGroup(), dataID), zap.Error(err))
 			return
 		}
+
+		a.guardHttpServer.Lock()
+		if a.httpServer.Running() {
+			a.httpServer.Close()
+		}
+		httpServer.Run()
 		a.httpServer = httpServer
-		a.httpServer.Init()
+		a.guardHttpServer.Unlock()
 	}
 }
 
@@ -68,7 +85,8 @@ func initInfluxDBClient(a *App) observer.Handler {
 			return
 		}
 		client := influxdb2.NewClient(c.ServerURL, c.AuthToken)
-		a.SetInfluxDBClient(&InfluxDBClient{client: &client})
+
+		env.Instance().SetInfluxDBClient(&client)
 	}
 }
 
@@ -93,6 +111,6 @@ func initOSSClient(a *App) observer.Handler {
 			a.Logger().Warn(fmt.Sprintf("fail to create a oss client, group = %s, dataID = %s", a.ACMGroup(), dataID), zap.Error(err))
 			return
 		}
-		a.SetOSSClient(&OSSClient{client: client})
+		env.Instance().SetOSSClient(client)
 	}
 }

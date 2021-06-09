@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,21 +19,33 @@ type Option struct {
 }
 
 type HttpServer struct {
-	option *Option
-	engine *gin.Engine
-	logger *zap.Logger
-	wait   chan struct{}
+	option  *Option
+	server  *http.Server
+	running bool
+	engine  *gin.Engine
+	logger  *zap.Logger
+	stop    chan struct{}
+	done    chan struct{}
 }
 
 func New(setters ...Setter) (*HttpServer, error) {
-	s := &HttpServer{
-		wait: make(chan struct{}),
-	}
+	s := &HttpServer{}
 	for _, setter := range setters {
 		if err := setter(s); err != nil {
 			return nil, err
 		}
 	}
+	if s.option.Addr == "" {
+		return nil, errors.New("no addr provided")
+	}
+	if s.engine == nil {
+		return nil, errors.New("no engine provided")
+	}
+	srv := &http.Server{
+		Addr:    s.option.Addr,
+		Handler: s.engine,
+	}
+	s.server = srv
 	return s, nil
 }
 
@@ -54,37 +63,38 @@ func WithOption(option *Option) Setter {
 	}
 }
 
-func (s *HttpServer) Init() {
-	go func() {
-		s.wait <- struct{}{}
-	}()
+func WithEngine(engine *gin.Engine) Setter {
+	return func(server *HttpServer) error {
+		server.engine = engine
+		return nil
+	}
 }
 
-func (s *HttpServer) Run() error {
-	<-s.wait
-	srv := &http.Server{
-		Addr:    s.option.Addr,
-		Handler: s.engine,
+func (s *HttpServer) Running() bool {
+	if s == nil {
+		return false
 	}
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
-			s.logger.Warn(fmt.Sprintf("listen and serve err"), zap.Error(err))
-		}
-	}()
+	return s.running
+}
 
-	quit := make(chan os.Signal)
-
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
+func (s *HttpServer) Close() {
+	if s == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.option.ShutdownTimeout)
 	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
+	err := s.server.Shutdown(ctx)
+	if err != nil {
 		s.logger.Fatal(fmt.Sprintf("listen and serve err"), zap.Error(err))
 	}
+	s.running = false
+}
 
-	s.logger.Debug(fmt.Sprintf("server exiting..."))
-
-	return nil
+func (s *HttpServer) Run() {
+	go func() {
+		err := s.server.ListenAndServe()
+		if err == nil {
+			s.running = true
+		}
+	}()
 }

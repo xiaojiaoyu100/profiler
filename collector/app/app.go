@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/xiaojiaoyu100/profiler/collector/config/serverconfig"
 
@@ -10,9 +13,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	log "github.com/sirupsen/logrus"
 	aliacm "github.com/xiaojiaoyu100/aliyun-acm/v2"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/info"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/observer"
@@ -21,24 +21,15 @@ import (
 	"go.uber.org/zap"
 )
 
-type InfluxDBClient struct {
-	lock   sync.RWMutex
-	client *influxdb2.Client
-}
-
-type OSSClient struct {
-	lock   sync.RWMutex
-	client *oss.Client
-}
-
 type App struct {
-	acmOption    *ACMOption
-	acmClient    *aliacm.Diamond
-	buildOption  *BuildOption
-	logger       *zap.Logger
-	httpServer   *server.HttpServer
-	ossClient    *OSSClient
-	influxClient *InfluxDBClient
+	acmOption   *ACMOption
+	acmClient   *aliacm.Diamond
+	buildOption *BuildOption
+	logger      *zap.Logger
+
+	guardHttpServer sync.Mutex
+	httpServer      *server.HttpServer
+	exit            chan os.Signal
 }
 
 type Setter func(app *App) error
@@ -64,7 +55,15 @@ func WithBuildOption(option *BuildOption) Setter {
 }
 
 func New(setters ...Setter) (*App, func(), error) {
-	a := &App{}
+	logger, err := zap.NewProduction()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	a := &App{
+		logger: logger,
+		exit:   make(chan os.Signal),
+	}
 	for _, setter := range setters {
 		if err := setter(a); err != nil {
 			return nil, nil, err
@@ -73,7 +72,8 @@ func New(setters ...Setter) (*App, func(), error) {
 	if a.buildOption == nil {
 		return nil, nil, errors.New("no build option provided")
 	}
-	cleanup := func() {}
+	cleanup := func() {
+	}
 	return a, cleanup, nil
 }
 
@@ -81,14 +81,18 @@ func (a *App) Init() error {
 	if err := a.initACMClient(); err != nil {
 		return err
 	}
+	a.initExit()
 	return nil
 }
 
-func (a *App) Run() error {
-	if err := a.httpServer.Run(); err != nil {
-		return err
-	}
-	return nil
+func (a *App) initExit() {
+	go func() {
+		signal.Notify(a.exit, syscall.SIGHUP, syscall.SIGINT, syscall.SIGQUIT)
+	}()
+}
+
+func (a *App) Run() {
+	<-a.exit
 }
 
 func (a *App) ACMGroup() string {
@@ -97,30 +101,6 @@ func (a *App) ACMGroup() string {
 
 func (a *App) Logger() *zap.Logger {
 	return a.logger
-}
-
-func (a *App) OSSClient() *oss.Client {
-	a.ossClient.lock.RLock()
-	defer a.ossClient.lock.RUnlock()
-	return a.ossClient.client
-}
-
-func (a *App) SetOSSClient(c *OSSClient) {
-	a.ossClient.lock.Lock()
-	defer a.ossClient.lock.Unlock()
-	a.ossClient = c
-}
-
-func (a *App) InfluxDBClient() *influxdb2.Client {
-	a.influxClient.lock.RLock()
-	defer a.influxClient.lock.RUnlock()
-	return a.influxClient.client
-}
-
-func (a *App) SetInfluxDBClient(c *InfluxDBClient) {
-	a.influxClient.lock.Lock()
-	defer a.influxClient.lock.Unlock()
-	a.influxClient = c
 }
 
 func (a *App) registerObserverList() error {
@@ -145,7 +125,7 @@ func (a *App) registerObserverList() error {
 	create(initInfluxDBClient(a), info.Info{Group: a.acmOption.Group, DataID: influxdbconfig.DataID})
 
 	if err != nil {
-		log.Warning("create observer failed: %s", err)
+		a.logger.Debug("fail to create observers", zap.Error(err))
 		return err
 	}
 	return nil

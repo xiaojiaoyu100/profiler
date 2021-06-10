@@ -89,9 +89,8 @@ func New(ff ...Setter) (*Agent, error) {
 	return agent, nil
 }
 
-func (a *Agent) Start(ctx context.Context) error {
+func (a *Agent) Start(ctx context.Context) {
 	go a.onSchedule(ctx)
-	return nil
 }
 
 func adjust(t time.Duration) time.Duration {
@@ -115,6 +114,7 @@ func (a *Agent) onSchedule(ctx context.Context) {
 	var ll = []profile.Type{
 		profile.TypeCPU,
 		profile.TypeHeap,
+		profile.TypeAllocs,
 		profile.TypeBlock,
 		profile.TypeMutex,
 		profile.TypeGoroutine,
@@ -156,6 +156,7 @@ func (a *Agent) onSchedule(ctx context.Context) {
 					block(ctx, a.o.CPUProfilingPeriod)
 					pprof.StopCPUProfile()
 				case profile.TypeHeap,
+					profile.TypeAllocs,
 					profile.TypeBlock,
 					profile.TypeMutex,
 					profile.TypeGoroutine,
@@ -188,8 +189,8 @@ func (a *Agent) onSchedule(ctx context.Context) {
 				body.SendTime = time.Now().UnixNano()
 				pp, err := gprofile.ParseData(buf.Bytes())
 				if err != nil {
-					fmt.Println("parse data: ", err)
-					return
+					fmt.Println("parse data: ", err, profileType)
+					continue
 				}
 				body.CreateTime = pp.TimeNanos
 

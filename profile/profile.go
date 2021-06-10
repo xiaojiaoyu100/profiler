@@ -8,6 +8,7 @@ const (
 	TypeUnknown Type = iota
 	TypeCPU
 	TypeHeap
+	TypeAllocs
 	TypeBlock
 	TypeMutex
 	TypeGoroutine
@@ -22,6 +23,8 @@ func (t Type) String() string {
 		return "cpu"
 	case TypeHeap:
 		return "heap"
+	case TypeAllocs:
+		return "allocs"
 	case TypeBlock:
 		return "block"
 	case TypeMutex:

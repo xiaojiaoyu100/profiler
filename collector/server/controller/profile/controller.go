@@ -22,7 +22,7 @@ type ReceiveProfileReq struct {
 	ProfileType    string `json:"profileType"`
 	Profile        string `json:"profile"`
 	SendTime       int64  `json:"sendTime"`
-	CreateTime     int64  `json:"create_time"`
+	CreateTime     int64  `json:"createTime"`
 }
 
 func ReceiveProfile(c *gin.Context) {

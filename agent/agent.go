@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"container/ring"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"runtime"
 	"runtime/pprof"
 	"time"
@@ -29,14 +31,23 @@ type Agent struct {
 	done chan struct{}
 }
 
-func WithCollectorAddr(addr string) func(option *Option) error {
-	return func(option *Option) error {
-		option.CollectorAddr = addr
+type Setter func(o *Option) error
+
+func WithCollectorAddr(addr string) Setter {
+	return func(o *Option) error {
+		o.CollectorAddr = addr
 		return nil
 	}
 }
 
-func New(ff ...func(option *Option) error) (*Agent, error) {
+func WithService(service string) Setter {
+	return func(o *Option) error {
+		o.Service = service
+		return nil
+	}
+}
+
+func New(ff ...Setter) (*Agent, error) {
 	option := &Option{}
 	option.goVersion = runtime.Version()
 	option.BreakPeriod = defaultBreakPeriod
@@ -50,6 +61,10 @@ func New(ff ...func(option *Option) error) (*Agent, error) {
 	if option.CollectorAddr == "" {
 		return nil, errors.New("no collector addr provided")
 	}
+	if option.Service == "" {
+		return nil, errors.New("no service provided")
+	}
+
 	c, err := cast.New(
 		cast.WithBaseURL(option.CollectorAddr),
 		cast.AddCircuitConfig(agentCircuit),
@@ -81,6 +96,17 @@ func (a *Agent) Start(ctx context.Context) error {
 
 func adjust(t time.Duration) time.Duration {
 	return t + time.Duration(rand.Intn(5)+1)*time.Second
+}
+
+type ReceiveProfileReq struct {
+	Service        string `json:"service"`
+	ServiceVersion string `json:"serviceVersion"`
+	Host           string `json:"host"`
+	GoVersion      string `json:"goVersion"`
+	ProfileType    string `json:"profileType"`
+	Profile        string `json:"profile"`
+	SendTime       int64  `json:"sendTime"`
+	CreateTime     int64  `json:"create_time"`
 }
 
 func (a *Agent) onSchedule(ctx context.Context) {
@@ -145,16 +171,39 @@ func (a *Agent) onSchedule(ctx context.Context) {
 					}
 				}
 
-				log.Printf("[%s]", profileType.String())
+				var body ReceiveProfileReq
+				body.Service = a.o.Service
+				body.ServiceVersion = a.o.ServiceVersion
+				hostname, err := os.Hostname()
+				if err != nil {
+					hostname = "unknown"
+				}
+				body.Host = hostname
+				body.GoVersion = runtime.Version()
+				body.ProfileType = profileType.String()
 
-				log.Println(buf.String())
+				pf := base64.StdEncoding.EncodeToString(buf.Bytes())
 
+				body.Profile = pf
+				body.SendTime = time.Now().UnixNano()
 				pp, err := gprofile.ParseData(buf.Bytes())
 				if err != nil {
 					fmt.Println("parse data: ", err)
 					return
 				}
-				log.Println(pp.String())
+				body.CreateTime = pp.TimeNanos
+
+				req := a.c.NewRequest().Post().WithPath("/v1/profile").WithJSONBody(&body)
+				resp, err := a.c.Do(ctx, req)
+				if err != nil {
+					fmt.Printf("send err: %s", err)
+					continue
+				}
+
+				if !resp.StatusOk() {
+					fmt.Println("status not ok")
+					continue
+				}
 
 				buf.Reset()
 				r = r.Next()

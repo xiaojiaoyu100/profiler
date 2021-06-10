@@ -2,7 +2,7 @@ package profile
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 
@@ -14,15 +14,15 @@ import (
 )
 
 type ReceiveProfileReq struct {
-	Service        string          `json:"service"`
-	ServiceVersion string          `json:"serviceVersion"`
-	Host           string          `json:"host"`
-	IP             string          `json:"ip"`
-	GoVersion      string          `json:"goVersion"`
-	ProfileType    string          `json:"profileType"`
-	Profile        json.RawMessage `json:"profile"`
-	SendTime       int64           `json:"sendTime"`
-	CreateTime     int64           `json:"create_time"`
+	Service        string `json:"service"`
+	ServiceVersion string `json:"serviceVersion"`
+	Host           string `json:"host"`
+	IP             string `json:"ip"`
+	GoVersion      string `json:"goVersion"`
+	ProfileType    string `json:"profileType"`
+	Profile        string `json:"profile"`
+	SendTime       int64  `json:"sendTime"`
+	CreateTime     int64  `json:"create_time"`
 }
 
 func ReceiveProfile(c *gin.Context) {
@@ -32,6 +32,7 @@ func ReceiveProfile(c *gin.Context) {
 	if err := c.BindJSON(&req); err != nil {
 		return
 	}
+	req.IP = c.ClientIP()
 
 	profileID := primitive.NewObjectID().Hex()
 
@@ -44,7 +45,13 @@ func ReceiveProfile(c *gin.Context) {
 
 	}
 
-	buf := bytes.NewBuffer(req.Profile)
+	pf, err := base64.StdEncoding.DecodeString(req.Profile)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	buf := bytes.NewBuffer(pf)
 	if buf.Len() == 0 {
 		logger().Debug("no profile provided")
 		c.Status(http.StatusOK)
@@ -83,7 +90,6 @@ func ReceiveProfile(c *gin.Context) {
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
-	return
 }
 
 func UploadPath(pathPrefix, service, profileType, fileName string) string {

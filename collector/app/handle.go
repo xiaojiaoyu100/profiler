@@ -100,6 +100,9 @@ func initTablestoreClient(a *App) observer.Handler {
 func initOSSClient(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
 		dataID := ossconfig.DataID
+
+		a.Logger().Debug(fmt.Sprintf("start to get config: group = %s, dataID = %s", a.ACMGroup(), dataID))
+
 		cc, ok := coll[info.Info{
 			Group:  a.ACMGroup(),
 			DataID: dataID,

@@ -137,5 +137,8 @@ func (a *App) initACMClient() error {
 		return err
 	}
 	a.acmClient.NotifyAll()
+	a.acmClient.SetHook(func(err error) {
+		a.logger.Warn("acm internal error", zap.Error(err))
+	})
 	return nil
 }

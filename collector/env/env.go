@@ -3,6 +3,8 @@ package env
 import (
 	"sync"
 
+	"go.uber.org/zap"
+
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
@@ -10,21 +12,22 @@ import (
 )
 
 type InfluxDBClient struct {
-	lock   sync.RWMutex
 	client *influxdb2.Client
 }
 
 type OSSClient struct {
-	lock   sync.RWMutex
-	client *oss.Client
+	Bucket     string
+	PathPrefix string
+	Client     *oss.Client
 }
 
 type TablestoreClient struct {
-	lock   sync.RWMutex
-	client *tablestore.TableStoreClient
+	TableName string
+	Client    *tablestore.TableStoreClient
 }
 
 type Env struct {
+	logger           *zap.Logger
 	ossClient        *OSSClient
 	tableStoreClient *TablestoreClient
 	influxClient     *InfluxDBClient
@@ -46,38 +49,34 @@ func Instance() *Env {
 	return env
 }
 
-func (e *Env) SetOSSClient(client *oss.Client) {
-	e.ossClient.lock.Lock()
-	defer e.ossClient.lock.Unlock()
-	e.ossClient.client = client
+func (e *Env) SetOSSClient(client *OSSClient) {
+	e.ossClient = client
 }
 
-func (e *Env) OSSClient() *oss.Client {
-	e.ossClient.lock.RLock()
-	defer e.ossClient.lock.RUnlock()
-	return e.ossClient.client
+func (e *Env) SetLogger(logger *zap.Logger) {
+	e.logger = logger
+}
+
+func (e *Env) Logger() *zap.Logger {
+	return e.logger
+}
+
+func (e *Env) OSSClient() *OSSClient {
+	return e.ossClient
 }
 
 func (e *Env) SetInfluxDBClient(client *influxdb2.Client) {
-	e.influxClient.lock.Lock()
-	defer e.influxClient.lock.Unlock()
 	e.influxClient.client = client
 }
 
 func (e *Env) InfluxDBClient() *influxdb2.Client {
-	e.influxClient.lock.RLock()
-	defer e.influxClient.lock.RUnlock()
 	return e.influxClient.client
 }
 
-func (e *Env) SetTablestoreClient(client *tablestore.TableStoreClient) {
-	e.tableStoreClient.lock.Lock()
-	defer e.tableStoreClient.lock.Unlock()
-	e.tableStoreClient.client = client
+func (e *Env) SetTablestoreClient(client *TablestoreClient) {
+	e.tableStoreClient = client
 }
 
-func (e *Env) TablestoreClient() *tablestore.TableStoreClient {
-	e.tableStoreClient.lock.RLock()
-	defer e.tableStoreClient.lock.RUnlock()
-	return e.tableStoreClient.client
+func (e *Env) TablestoreClient() *TablestoreClient {
+	return e.tableStoreClient
 }

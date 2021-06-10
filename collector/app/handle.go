@@ -65,6 +65,8 @@ func initHttpServer(a *App) observer.Handler {
 		httpServer.Run()
 		a.httpServer = httpServer
 		a.guardHttpServer.Unlock()
+
+		env.Instance().SetLogger(a.logger)
 	}
 }
 
@@ -88,7 +90,10 @@ func initTablestoreClient(a *App) observer.Handler {
 
 		client := tablestore.NewClient(c.EndPoint, c.InstanceName, c.AccessKeyId, c.AccessKeySecret)
 
-		env.Instance().SetTablestoreClient(client)
+		env.Instance().SetTablestoreClient(&env.TablestoreClient{
+			TableName: c.TableName,
+			Client:    client,
+		})
 	}
 }
 
@@ -113,6 +118,10 @@ func initOSSClient(a *App) observer.Handler {
 			a.Logger().Warn(fmt.Sprintf("fail to create a oss client, group = %s, dataID = %s", a.ACMGroup(), dataID), zap.Error(err))
 			return
 		}
-		env.Instance().SetOSSClient(client)
+		env.Instance().SetOSSClient(&env.OSSClient{
+			Bucket:     c.Bucket,
+			PathPrefix: c.PathPrefix,
+			Client:     client,
+		})
 	}
 }

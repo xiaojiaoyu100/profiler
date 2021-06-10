@@ -195,13 +195,14 @@ func (a *Agent) collectAndSend(ctx context.Context, buf *bytes.Buffer, r *ring.R
 	return nil
 }
 
-func (a *Agent) prepareNextRound(t *time.Timer, buf *bytes.Buffer, r *ring.Ring) {
+func (a *Agent) prepareNextRound(t *time.Timer, buf *bytes.Buffer, r *ring.Ring) *ring.Ring {
 	buf.Reset()
 	r = r.Next()
 	if r.Value.(profile.Type) == profile.TypeCPU {
 		t.Reset(adjust(a.o.BreakPeriod))
 	}
 	t.Reset(adjust(0))
+	return r
 }
 
 func (a *Agent) onSchedule(ctx context.Context) {
@@ -231,7 +232,7 @@ func (a *Agent) onSchedule(ctx context.Context) {
 				if err := a.collectAndSend(ctx, &buf, r); err != nil {
 					a.logger.Warn(fmt.Sprintf("fail to collect and send: %v", r.Value), zap.Error(err))
 				}
-				a.prepareNextRound(ti, &buf, r)
+				r = a.prepareNextRound(ti, &buf, r)
 			}
 
 		}

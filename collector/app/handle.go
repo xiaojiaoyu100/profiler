@@ -66,7 +66,9 @@ func initHttpServer(a *App) observer.Handler {
 		a.httpServer = httpServer
 		a.guardHttpServer.Unlock()
 
-		env.Instance().SetLogger(a.logger)
+		env.Instance().SetLogger(&env.Logger{
+			a.logger,
+		})
 	}
 }
 

@@ -8,13 +8,14 @@ type Option struct {
 	ServiceVersion        string
 	goVersion             string
 	BreakPeriod           time.Duration
-	CPUProfiling          bool
+	CPUProfiling          bool `profile:"cpu"`
 	CPUProfilingPeriod    time.Duration
-	HeapProfiling         bool
-	BlockProfiling        bool
-	MutexProfiling        bool
-	GoroutineProfiling    bool
-	ThreadCreateProfiling bool
+	HeapProfiling         bool `profile:"heap"`
+	AllocsProfiling       bool `profile:"allocs"`
+	BlockProfiling        bool `profile:"block"`
+	MutexProfiling        bool `profile:"mutex"`
+	GoroutineProfiling    bool `profile:"goroutine"`
+	ThreadCreateProfiling bool `profile:"threadcreate"`
 }
 
 const (

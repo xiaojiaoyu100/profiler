@@ -15,14 +15,14 @@ import (
 
 type ReceiveProfileReq struct {
 	Service        string `json:"service"`
-	ServiceVersion string `json:"serviceVersion"`
+	ServiceVersion string `json:"service_version"`
 	Host           string `json:"host"`
 	IP             string `json:"ip"`
-	GoVersion      string `json:"goVersion"`
-	ProfileType    string `json:"profileType"`
+	GoVersion      string `json:"go_version"`
+	ProfileType    string `json:"profile_type"`
 	Profile        string `json:"profile"`
-	SendTime       int64  `json:"sendTime"`
-	CreateTime     int64  `json:"createTime"`
+	SendTime       int64  `json:"send_time"`
+	CreateTime     int64  `json:"create_time"`
 }
 
 func ReceiveProfile(c *gin.Context) {

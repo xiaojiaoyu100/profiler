@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"reflect"
 	"runtime"
 	"runtime/pprof"
 	"time"
@@ -42,9 +43,60 @@ func WithCollectorAddr(addr string) Setter {
 	}
 }
 
-func WithService(service string) Setter {
+func WithService(service string, serviceVersion string) Setter {
 	return func(o *Option) error {
 		o.Service = service
+		o.ServiceVersion = serviceVersion
+		return nil
+	}
+}
+
+func WithCPUProfiling(en bool, d time.Duration) Setter {
+	return func(o *Option) error {
+		o.CPUProfiling = en
+		o.CPUProfilingPeriod = d
+		return nil
+	}
+}
+
+func WithHeapProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.HeapProfiling = en
+		return nil
+	}
+}
+
+func WithAllocsProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.AllocsProfiling = en
+		return nil
+	}
+}
+
+func WithBlockProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.BlockProfiling = en
+		return nil
+	}
+}
+
+func WithMutexProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.MutexProfiling = en
+		return nil
+	}
+}
+
+func WithGoroutineProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.GoroutineProfiling = en
+		return nil
+	}
+}
+
+func WithThreadCreateProfiling(en bool) Setter {
+	return func(o *Option) error {
+		o.ThreadCreateProfiling = en
 		return nil
 	}
 }
@@ -54,6 +106,9 @@ func New(ff ...Setter) (*Agent, error) {
 	option.goVersion = runtime.Version()
 	option.BreakPeriod = defaultBreakPeriod
 	option.CPUProfilingPeriod = defaultCPUProfilingPeriod
+	option.CPUProfiling = true
+	option.HeapProfiling = true
+	option.AllocsProfiling = true
 
 	for _, f := range ff {
 		if err := f(option); err != nil {
@@ -65,6 +120,10 @@ func New(ff ...Setter) (*Agent, error) {
 	}
 	if option.Service == "" {
 		return nil, errors.New("no service provided")
+	}
+
+	if option.ServiceVersion == "" {
+		return nil, errors.New("no service version provided")
 	}
 
 	c, err := cast.New(
@@ -108,16 +167,33 @@ func adjust(t time.Duration) time.Duration {
 
 type ReceiveProfileReq struct {
 	Service        string `json:"service"`
-	ServiceVersion string `json:"serviceVersion"`
+	ServiceVersion string `json:"service_version"`
 	Host           string `json:"host"`
-	GoVersion      string `json:"goVersion"`
-	ProfileType    string `json:"profileType"`
+	GoVersion      string `json:"go_version"`
+	ProfileType    string `json:"profile_type"`
 	Profile        string `json:"profile"`
-	SendTime       int64  `json:"sendTime"`
-	CreateTime     int64  `json:"createTime"`
+	SendTime       int64  `json:"send_time"`
+	CreateTime     int64  `json:"create_time"`
 }
 
 func (a *Agent) initRing() *ring.Ring {
+	ret := make(map[string]bool)
+	t := reflect.TypeOf(*a.o)
+	v := reflect.ValueOf(a.o).Elem()
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("profile")
+		if tag == "" {
+			continue
+		}
+		if v.Field(i).Type().Kind() != reflect.Bool {
+			continue
+		}
+		en := v.Field(i).Bool()
+		if !en {
+			continue
+		}
+		ret[tag] = true
+	}
 	var ll = []profile.Type{
 		profile.TypeCPU,
 		profile.TypeHeap,
@@ -127,8 +203,12 @@ func (a *Agent) initRing() *ring.Ring {
 		profile.TypeGoroutine,
 		profile.TypeThreadCreate,
 	}
-	var r = ring.New(len(ll))
+	var r = ring.New(len(ret))
 	for i := 0; i < len(ll); i++ {
+		_, ok := ret[ll[i].String()]
+		if !ok {
+			continue
+		}
 		r.Value = ll[i]
 		r = r.Next()
 	}
@@ -155,7 +235,7 @@ func (a *Agent) collectAndSend(ctx context.Context, buf *bytes.Buffer, r *ring.R
 			return fmt.Errorf("fail to look up profile type: %s", profileType.String())
 		}
 		if err := p.WriteTo(buf, 0); err != nil {
-			return fmt.Errorf("fail to write profile: %w", err)
+			return fmt.Errorf("fail to write profile[%s]: %w", profileType.String(), err)
 		}
 	}
 
@@ -172,25 +252,24 @@ func (a *Agent) collectAndSend(ctx context.Context, buf *bytes.Buffer, r *ring.R
 
 	pf := base64.StdEncoding.EncodeToString(buf.Bytes())
 	if len(pf) == 0 {
-		return fmt.Errorf("fprofile buffer is zero: %s", profileType.String())
+		return fmt.Errorf("profile buffer is zero: %s", profileType.String())
 	}
 
 	body.Profile = pf
 	body.SendTime = time.Now().UnixNano()
 	pp, err := gprofile.ParseData(buf.Bytes())
 	if err != nil {
-		return fmt.Errorf("fail to parse profile data: %w", err)
+		return fmt.Errorf("fail to parse profile[%s] data: %w", profileType.String(), err)
 	}
 	body.CreateTime = pp.TimeNanos
 
 	req := a.c.NewRequest().Post().WithPath("/v1/profile").WithJSONBody(&body)
 	resp, err := a.c.Do(ctx, req)
 	if err != nil {
-		return fmt.Errorf("fail to send profile: %w", err)
+		return fmt.Errorf("fail to send profile[%s]: %w", profileType.String(), err)
 	}
-
 	if !resp.StatusOk() {
-		return fmt.Errorf("response is not ok: %s", resp.String())
+		return fmt.Errorf("profile[%s] response is not ok: %s", profileType.String(), resp.String())
 	}
 	return nil
 }
@@ -234,10 +313,8 @@ func (a *Agent) onSchedule(ctx context.Context) {
 				}
 				r = a.prepareNextRound(ti, &buf, r)
 			}
-
 		}
 	}
-
 }
 
 func block(ctx context.Context, t time.Duration) {

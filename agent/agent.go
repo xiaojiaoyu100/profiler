@@ -237,6 +237,9 @@ func (a *Agent) collectAndSend(ctx context.Context, buf *bytes.Buffer, r *ring.R
 		profile.TypeMutex,
 		profile.TypeGoroutine,
 		profile.TypeThreadCreate:
+		if profileType == profile.TypeHeap {
+			runtime.GC()
+		}
 		p := pprof.Lookup(profileType.String())
 		if p == nil {
 			return fmt.Errorf("fail to look up profile type: %s", profileType.String())

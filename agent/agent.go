@@ -263,12 +263,12 @@ func (a *Agent) collectAndSend(ctx context.Context, buf *bytes.Buffer, r *ring.R
 	}
 
 	body.Profile = pf
-	body.SendTime = time.Now().UnixNano()
+	body.SendTime = time.Now().Unix()
 	pp, err := gprofile.ParseData(buf.Bytes())
 	if err != nil {
 		return fmt.Errorf("fail to parse profile[%s] data: %w", profileType.String(), err)
 	}
-	body.CreateTime = pp.TimeNanos
+	body.CreateTime = pp.TimeNanos / 1e9
 
 	req := a.c.NewRequest().Post().WithPath("/v1/profile").WithJSONBody(&body)
 	resp, err := a.c.Do(ctx, req)

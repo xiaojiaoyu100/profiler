@@ -16,6 +16,7 @@ func Engine(env *env.Env) *gin.Engine {
 	engine.NoRoute(NoRoutesHandler)
 	engine.Use(gin.Recovery())
 	engine.Use(middleware.InjectEnv(env))
+	engine.Use(middleware.SetRequestId())
 	return engine
 }
 

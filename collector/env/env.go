@@ -26,8 +26,12 @@ type TablestoreClient struct {
 	Client    *tablestore.TableStoreClient
 }
 
+type Logger struct {
+	*zap.Logger
+}
+
 type Env struct {
-	logger           *zap.Logger
+	logger           *Logger
 	ossClient        *OSSClient
 	tableStoreClient *TablestoreClient
 	influxClient     *InfluxDBClient
@@ -53,11 +57,11 @@ func (e *Env) SetOSSClient(client *OSSClient) {
 	e.ossClient = client
 }
 
-func (e *Env) SetLogger(logger *zap.Logger) {
+func (e *Env) SetLogger(logger *Logger) {
 	e.logger = logger
 }
 
-func (e *Env) Logger() *zap.Logger {
+func (e *Env) Logger() *Logger {
 	return e.logger
 }
 

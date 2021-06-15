@@ -39,7 +39,7 @@ func ReceiveProfile(c *gin.Context) {
 	oss := middleware.Env(c).OSSClient()
 	bucket, err := oss.Client.Bucket(oss.Bucket)
 	if err != nil {
-		logger().Debug("new bucket err", zap.Error(err))
+		logger().WithRequestId(c).Debug("new bucket err", zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 
@@ -53,7 +53,7 @@ func ReceiveProfile(c *gin.Context) {
 
 	buf := bytes.NewBuffer(pf)
 	if buf.Len() == 0 {
-		logger().Debug("no profile provided")
+		logger().WithRequestId(c).Debug("no profile provided")
 		c.Status(http.StatusOK)
 		return
 	}

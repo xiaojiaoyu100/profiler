@@ -26,10 +26,11 @@ import (
 )
 
 type App struct {
-	acmOption   *ACMOption
-	acmClient   *aliacm.Diamond
-	buildOption *BuildOption
-	logger      *zap.Logger
+	onlyLoadConfig bool
+	acmOption      *ACMOption
+	acmClient      *aliacm.Diamond
+	buildOption    *BuildOption
+	logger         *zap.Logger
 
 	guardHttpServer sync.Mutex
 	httpServer      *server.HttpServer
@@ -37,6 +38,13 @@ type App struct {
 }
 
 type Setter func(app *App) error
+
+func WithOnlyLoadConfig() Setter {
+	return func(app *App) error {
+		app.onlyLoadConfig = true
+		return nil
+	}
+}
 
 func WithACMCOption(option *ACMOption) Setter {
 	return func(app *App) error {

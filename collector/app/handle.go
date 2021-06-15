@@ -58,14 +58,15 @@ func initHttpServer(a *App) observer.Handler {
 			return
 		}
 
-		a.guardHttpServer.Lock()
-		if a.httpServer.Running() {
-			a.httpServer.Close()
+		if !a.onlyLoadConfig {
+			a.guardHttpServer.Lock()
+			if a.httpServer.Running() {
+				a.httpServer.Close()
+			}
+			httpServer.Run()
+			a.httpServer = httpServer
+			a.guardHttpServer.Unlock()
 		}
-		httpServer.Run()
-		a.httpServer = httpServer
-		a.guardHttpServer.Unlock()
-
 		env.Instance().SetLogger(&env.Logger{
 			Logger: a.logger,
 		})

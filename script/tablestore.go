@@ -44,31 +44,31 @@ func InitOTS(env *env.Env) {
 	request.IndexName = idx
 
 	schemas := []*tablestore.FieldSchema{
-		&tablestore.FieldSchema{
+		{
 			FieldName:        proto.String("profile_type"),
 			FieldType:        tablestore.FieldType_KEYWORD,
 			Index:            proto.Bool(true),
 			EnableSortAndAgg: proto.Bool(true),
 		},
-		&tablestore.FieldSchema{
+		{
 			FieldName:        proto.String("create_time"),
 			FieldType:        tablestore.FieldType_LONG,
 			Index:            proto.Bool(true),
 			EnableSortAndAgg: proto.Bool(true),
 		},
-		&tablestore.FieldSchema{
+		{
 			FieldName:        proto.String("service"),
 			FieldType:        tablestore.FieldType_KEYWORD,
 			Index:            proto.Bool(true),
 			EnableSortAndAgg: proto.Bool(true),
 		},
-		&tablestore.FieldSchema{
+		{
 			FieldName:        proto.String("ip"),
 			FieldType:        tablestore.FieldType_KEYWORD,
 			Index:            proto.Bool(true),
 			EnableSortAndAgg: proto.Bool(true),
 		},
-		&tablestore.FieldSchema{
+		{
 			FieldName:        proto.String("host"),
 			FieldType:        tablestore.FieldType_KEYWORD,
 			Index:            proto.Bool(true),

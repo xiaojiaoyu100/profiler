@@ -7,6 +7,7 @@ require (
 	github.com/aliyun/aliyun-tablestore-go-sdk/v5 v5.0.6
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
 	github.com/gin-gonic/gin v1.7.2
+	github.com/golang/protobuf v1.3.3
 	github.com/google/pprof v0.0.0-20210601050228-01bbb1931b22
 	github.com/influxdata/influxdb-client-go/v2 v2.4.0
 	github.com/sirupsen/logrus v1.5.0

@@ -51,6 +51,13 @@ func WithService(service string, serviceVersion string) Setter {
 	}
 }
 
+func WithBreakPeriod(d time.Duration) Setter {
+	return func(o *Option) error {
+		o.BreakPeriod = d
+		return nil
+	}
+}
+
 func WithCPUProfiling(en bool, d time.Duration) Setter {
 	return func(o *Option) error {
 		o.CPUProfiling = en

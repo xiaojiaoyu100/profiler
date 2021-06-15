@@ -6,6 +6,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"go.uber.org/zap/zapcore"
+
 	"github.com/xiaojiaoyu100/profiler/collector/config/tablestoreconfig"
 
 	"github.com/xiaojiaoyu100/profiler/collector/config/serverconfig"
@@ -14,6 +16,7 @@ import (
 
 	"errors"
 	"sync"
+	"time"
 
 	aliacm "github.com/xiaojiaoyu100/aliyun-acm/v2"
 	"github.com/xiaojiaoyu100/aliyun-acm/v2/info"
@@ -55,10 +58,22 @@ func WithBuildOption(option *BuildOption) Setter {
 	}
 }
 
+func newEncoderConfig() zapcore.EncoderConfig {
+	ec := zap.NewProductionEncoderConfig()
+	ec.TimeKey = "time"
+	ec.EncodeTime = func(t time.Time, encoder zapcore.PrimitiveArrayEncoder) {
+		encoder.AppendString(t.Format("2006-01-02 15:04:05"))
+	}
+	return ec
+}
+
 func New(setters ...Setter) (*App, func(), error) {
-	logger, err := zap.NewProduction()
+	conf := zap.NewProductionConfig()
+	conf.Sampling = nil
+	conf.EncoderConfig = newEncoderConfig()
+	logger, err := conf.Build()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("fail to create a logger: %w", err)
 	}
 
 	a := &App{

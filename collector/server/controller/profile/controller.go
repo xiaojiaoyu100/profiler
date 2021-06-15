@@ -39,21 +39,33 @@ func ReceiveProfile(c *gin.Context) {
 	oss := middleware.Env(c).OSSClient()
 	bucket, err := oss.Client.Bucket(oss.Bucket)
 	if err != nil {
-		logger().WithRequestId(c).Debug("new bucket err", zap.Error(err))
+		logger().WithRequestId(c).Info("new bucket err",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
-
 	}
 
 	pf, err := base64.StdEncoding.DecodeString(req.Profile)
 	if err != nil {
+		logger().WithRequestId(c).Info("fail to decode profile",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
 	buf := bytes.NewBuffer(pf)
 	if buf.Len() == 0 {
-		logger().WithRequestId(c).Debug("no profile provided")
+		logger().WithRequestId(c).Info("no profile provided",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+		)
 		c.Status(http.StatusOK)
 		return
 	}
@@ -63,6 +75,11 @@ func ReceiveProfile(c *gin.Context) {
 		buf,
 	)
 	if err != nil {
+		logger().WithRequestId(c).Info("fail to upload",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
@@ -87,6 +104,11 @@ func ReceiveProfile(c *gin.Context) {
 	putRowRequest.PutRowChange = putRowChange
 	_, err = tb.Client.PutRow(putRowRequest)
 	if err != nil {
+		logger().WithRequestId(c).Info("fail to insert a row",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}

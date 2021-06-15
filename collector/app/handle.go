@@ -25,7 +25,7 @@ import (
 
 func initHttpServer(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
-		a.Logger().Debug("about to start server ")
+		a.Logger().Info("about to start server")
 
 		dataID := serverconfig.DataID
 
@@ -34,7 +34,7 @@ func initHttpServer(a *App) observer.Handler {
 			DataID: dataID,
 		}]
 		if !ok {
-			a.Logger().Debug(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
+			a.Logger().Info(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
 			return
 		}
 		c := &serverconfig.Config{}
@@ -67,7 +67,7 @@ func initHttpServer(a *App) observer.Handler {
 		a.guardHttpServer.Unlock()
 
 		env.Instance().SetLogger(&env.Logger{
-			a.logger,
+			Logger: a.logger,
 		})
 	}
 }
@@ -81,7 +81,7 @@ func initTablestoreClient(a *App) observer.Handler {
 			DataID: dataID,
 		}]
 		if !ok {
-			a.Logger().Debug(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
+			a.Logger().Info(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
 			return
 		}
 		c := &tablestoreconfig.TablestoreConfig{}
@@ -103,14 +103,14 @@ func initOSSClient(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
 		dataID := ossconfig.DataID
 
-		a.Logger().Debug(fmt.Sprintf("start to get config: group = %s, dataID = %s", a.ACMGroup(), dataID))
+		a.Logger().Info(fmt.Sprintf("start to get config: group = %s, dataID = %s", a.ACMGroup(), dataID))
 
 		cc, ok := coll[info.Info{
 			Group:  a.ACMGroup(),
 			DataID: dataID,
 		}]
 		if !ok {
-			a.Logger().Debug(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
+			a.Logger().Info(fmt.Sprintf("fail to load, group = %s, dataID = %s", a.ACMGroup(), dataID))
 			return
 		}
 		c := &ossconfig.Config{}

@@ -14,6 +14,8 @@ import (
 	"runtime/pprof"
 	"time"
 
+	"github.com/xiaojiaoyu100/profiler/log"
+
 	"go.uber.org/zap"
 
 	gprofile "github.com/google/pprof/profile"
@@ -149,7 +151,10 @@ func New(ff ...Setter) (*Agent, error) {
 		return nil, fmt.Errorf("create cast err: %w", err)
 	}
 
-	logger, err := zap.NewProduction()
+	conf := zap.NewProductionConfig()
+	conf.Sampling = nil
+	conf.EncoderConfig = log.NewEncoderConfig()
+	logger, err := conf.Build()
 	if err != nil {
 		return nil, fmt.Errorf("fail to create a logger: %w", err)
 	}

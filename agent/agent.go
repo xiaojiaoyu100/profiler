@@ -303,6 +303,10 @@ func (a *Agent) onSchedule(ctx context.Context) {
 	defer close(a.done)
 
 	r := a.initRing()
+	if r == nil {
+		return
+	}
+
 	pt := r.Value.(profile.Type)
 
 	ctx, cancel := context.WithCancel(ctx)

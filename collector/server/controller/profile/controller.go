@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,8 @@ type ReceiveProfileReq struct {
 	SendTime       int64  `json:"send_time"`
 	CreateTime     int64  `json:"create_time"`
 }
+
+var cn = time.FixedZone("GMT", 8*3600)
 
 func ReceiveProfile(c *gin.Context) {
 	logger := middleware.Env(c).Logger
@@ -70,12 +73,22 @@ func ReceiveProfile(c *gin.Context) {
 		return
 	}
 
-	err = bucket.PutObject(
-		UploadPath(oss.PathPrefix, req.Service, req.ProfileType, profileID),
-		buf,
-	)
+	objectName := UploadPath(oss.PathPrefix, req.Service, req.ProfileType, profileID)
+
+	err = bucket.PutObject(objectName, buf)
 	if err != nil {
 		logger().WithRequestId(c).Info("fail to upload",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	_, err = bucket.GetObjectDetailedMeta(objectName)
+	if err != nil {
+		logger().WithRequestId(c).Info("fail to query object",
 			zap.String("service", req.Service),
 			zap.String("service_version", req.ServiceVersion),
 			zap.String("ip", req.IP),
@@ -100,6 +113,7 @@ func ReceiveProfile(c *gin.Context) {
 	putRowChange.AddColumn("profile_type", req.ProfileType)
 	putRowChange.AddColumn("send_time", req.SendTime)
 	putRowChange.AddColumn("create_time", req.CreateTime)
+	putRowChange.AddColumn("object_name", objectName)
 	putRowChange.SetCondition(tablestore.RowExistenceExpectation_EXPECT_NOT_EXIST)
 	putRowRequest.PutRowChange = putRowChange
 	_, err = tb.Client.PutRow(putRowRequest)
@@ -115,5 +129,10 @@ func ReceiveProfile(c *gin.Context) {
 }
 
 func UploadPath(pathPrefix, service, profileType, fileName string) string {
-	return fmt.Sprintf("%s/%s/%s/%s", pathPrefix, service, profileType, fileName)
+	return fmt.Sprintf("%s/%s/%s/%s/%s",
+		pathPrefix,
+		time.Now().In(cn).Format("2006-01-02"),
+		service,
+		profileType,
+		fileName)
 }

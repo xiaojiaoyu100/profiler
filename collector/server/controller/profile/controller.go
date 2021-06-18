@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
@@ -86,9 +87,20 @@ func ReceiveProfile(c *gin.Context) {
 		return
 	}
 
-	_, err = bucket.GetObjectDetailedMeta(objectName)
+	meta, err := bucket.GetObjectDetailedMeta(objectName)
 	if err != nil {
 		logger().WithRequestId(c).Info("fail to query object",
+			zap.String("service", req.Service),
+			zap.String("service_version", req.ServiceVersion),
+			zap.String("ip", req.IP),
+			zap.Error(err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	size, err := strconv.ParseInt(meta.Get("Content-Length"), 10, 64)
+	if err != nil {
+		logger().WithRequestId(c).Info("fail to parse int64",
 			zap.String("service", req.Service),
 			zap.String("service_version", req.ServiceVersion),
 			zap.String("ip", req.IP),
@@ -114,6 +126,7 @@ func ReceiveProfile(c *gin.Context) {
 	putRowChange.AddColumn("send_time", req.SendTime)
 	putRowChange.AddColumn("create_time", req.CreateTime)
 	putRowChange.AddColumn("object_name", objectName)
+	putRowChange.AddColumn("size", size)
 	putRowChange.SetCondition(tablestore.RowExistenceExpectation_EXPECT_NOT_EXIST)
 	putRowRequest.PutRowChange = putRowChange
 	_, err = tb.Client.PutRow(putRowRequest)

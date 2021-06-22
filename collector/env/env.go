@@ -16,6 +16,7 @@ type InfluxDBClient struct {
 }
 
 type OSSClient struct {
+	EndPoint   string
 	Bucket     string
 	PathPrefix string
 	Client     *oss.Client

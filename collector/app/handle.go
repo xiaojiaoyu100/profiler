@@ -125,6 +125,7 @@ func initOSSClient(a *App) observer.Handler {
 			return
 		}
 		env.Instance().SetOSSClient(&env.OSSClient{
+			EndPoint:   c.Endpoint,
 			Bucket:     c.Bucket,
 			PathPrefix: c.PathPrefix,
 			Client:     client,

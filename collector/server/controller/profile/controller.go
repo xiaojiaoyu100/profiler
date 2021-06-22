@@ -3,16 +3,23 @@ package profile
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
+	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore/search"
 	"github.com/gin-gonic/gin"
+	gprofile "github.com/google/pprof/profile"
+	"github.com/xiaojiaoyu100/profiler/collector/env"
 	"github.com/xiaojiaoyu100/profiler/collector/server/middleware"
+	"github.com/xiaojiaoyu100/profiler/collector/server/model/profilemodel"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 )
 
 type ReceiveProfileReq struct {
@@ -115,18 +122,18 @@ func ReceiveProfile(c *gin.Context) {
 	putRowChange := new(tablestore.PutRowChange)
 	putRowChange.TableName = tb.TableName
 	putPk := new(tablestore.PrimaryKey)
-	putPk.AddPrimaryKeyColumn("profile_id", profileID)
+	putPk.AddPrimaryKeyColumn(profilemodel.ProfileId, profileID)
 	putRowChange.PrimaryKey = putPk
-	putRowChange.AddColumn("service", req.Service)
-	putRowChange.AddColumn("service_version", req.ServiceVersion)
-	putRowChange.AddColumn("host", req.Host)
-	putRowChange.AddColumn("ip", req.IP)
-	putRowChange.AddColumn("go_version", req.GoVersion)
-	putRowChange.AddColumn("profile_type", req.ProfileType)
-	putRowChange.AddColumn("send_time", req.SendTime)
-	putRowChange.AddColumn("create_time", req.CreateTime)
-	putRowChange.AddColumn("object_name", objectName)
-	putRowChange.AddColumn("size", size)
+	putRowChange.AddColumn(profilemodel.Service, req.Service)
+	putRowChange.AddColumn(profilemodel.ServiceVersion, req.ServiceVersion)
+	putRowChange.AddColumn(profilemodel.Host, req.Host)
+	putRowChange.AddColumn(profilemodel.IP, req.IP)
+	putRowChange.AddColumn(profilemodel.GoVersion, req.GoVersion)
+	putRowChange.AddColumn(profilemodel.ProfileType, req.ProfileType)
+	putRowChange.AddColumn(profilemodel.SendTime, req.SendTime)
+	putRowChange.AddColumn(profilemodel.CreateTime, req.CreateTime)
+	putRowChange.AddColumn(profilemodel.ObjectName, objectName)
+	putRowChange.AddColumn(profilemodel.Size, size)
 	putRowChange.SetCondition(tablestore.RowExistenceExpectation_EXPECT_NOT_EXIST)
 	putRowRequest.PutRowChange = putRowChange
 	_, err = tb.Client.PutRow(putRowRequest)
@@ -148,4 +155,340 @@ func UploadPath(pathPrefix, service, profileType, fileName string) string {
 		service,
 		profileType,
 		fileName)
+}
+
+type MergeProfileReq struct {
+	Host        string `json:"host"`
+	Ip          string `json:"ip"`
+	Service     string `json:"service"`
+	ProfileType string `json:"profile_type"`
+	StartTime   int64  `json:"start_time"`
+	EndTime     int64  `json:"end_time"`
+}
+
+type mergeProfileDetail struct {
+	Host  string `json:"host"`
+	Url   string `json:"url"`
+	Count int    `json:"count"`
+}
+
+type HostProfile struct {
+	Host    string
+	Profile *gprofile.Profile
+}
+
+func MergeProfile(c *gin.Context) {
+	logger := middleware.Env(c).Logger
+	var req MergeProfileReq
+	if err := c.BindJSON(&req); err != nil {
+		return
+	}
+
+	tb := middleware.Env(c).TablestoreClient()
+	ossClient := middleware.Env(c).OSSClient()
+
+	bucket, err := ossClient.Client.Bucket(ossClient.Bucket)
+	if err != nil {
+		logger().WithRequestId(c).Info("new bucket err",
+			zap.Reflect("req", req),
+			zap.Error(err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	profileModelList, err := getProfileModelList(tb, req)
+	if err != nil {
+		logger().WithRequestId(c).Info("list profile err",
+			zap.Reflect("req", req),
+			zap.Error(err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	group, _ := errgroup.WithContext(c)
+
+	var hostProfileList []HostProfile
+	for _, profileModel := range profileModelList {
+		if len(profileModel.ObjectName) == 0 {
+			continue
+		}
+
+		pfm := profileModel
+		group.Go(func() error {
+			body, err := bucket.GetObject(pfm.ObjectName)
+			if err != nil {
+				logger().WithRequestId(c).Info("get object err",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			b, err := ioutil.ReadAll(body)
+			if err != nil {
+				logger().WithRequestId(c).Info("read all err",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			pprofProfile, err := gprofile.ParseData(b)
+			if err != nil {
+				logger().WithRequestId(c).Info("profile parse err",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			hostProfileList = append(hostProfileList, HostProfile{
+				Host:    pfm.Host,
+				Profile: pprofProfile,
+			})
+
+			return nil
+		})
+	}
+
+	err = group.Wait()
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	hostProfileListMap := make(map[string][]*gprofile.Profile)
+	for _, hostProfile := range hostProfileList {
+		hostProfileListMap[hostProfile.Host] = append(hostProfileListMap[hostProfile.Host], hostProfile.Profile)
+	}
+
+	var resp struct {
+		List  []*mergeProfileDetail `json:"list"`
+		Total int                   `json:"total"`
+	}
+	resp.List = make([]*mergeProfileDetail, 0)
+
+	for host, pprofProfileList := range hostProfileListMap {
+		h := host
+		ppl := pprofProfileList
+		group.Go(func() error {
+			mergeProfile, err := gprofile.Merge(ppl)
+			if err != nil {
+				logger().WithRequestId(c).Info("profile merge err",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			buf := new(bytes.Buffer)
+			err = mergeProfile.Write(buf)
+			if err != nil {
+				logger().WithRequestId(c).Info("profile write err",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			newProfileID := primitive.NewObjectID().Hex()
+			objectName := UploadPath(ossClient.PathPrefix, req.Service, req.ProfileType, newProfileID)
+
+			err = bucket.PutObject(objectName, buf)
+			if err != nil {
+				logger().WithRequestId(c).Info("fail to upload",
+					zap.Reflect("req", req),
+					zap.Error(err))
+				return err
+			}
+
+			ossUrl := fmt.Sprintf("https://%s.%s/%s", ossClient.Bucket, ossClient.EndPoint, objectName)
+
+			resp.List = append(resp.List, &mergeProfileDetail{
+				Host:  h,
+				Url:   ossUrl,
+				Count: len(ppl),
+			})
+			resp.Total += len(ppl)
+
+			return nil
+		})
+	}
+	err = group.Wait()
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	c.AbortWithStatusJSON(http.StatusOK, resp)
+}
+
+const limit = int32(100)
+
+/*
+	getProfileModelList
+	Batch get profile model from tableStore
+*/
+func getProfileModelList(tb *env.TablestoreClient, req MergeProfileReq) ([]*profilemodel.Model, error) {
+	result, total, err := searchProfile(tb, req, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Error - restrict total profile of 2000
+	if total > int64(20*limit) {
+		return nil, errors.New("out of total, 2000")
+	}
+
+	if len(result) < int(limit) {
+		return result, nil
+	}
+
+	var offset = limit
+	var totalSize int64
+	for {
+		list, _, err := searchProfile(tb, req, offset)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, v := range list {
+			totalSize += v.Size
+		}
+
+		// Error - restrict total file size of 100Mb
+		if totalSize > 100*1024*1024*1024 {
+			return nil, errors.New("out of size, 100MB")
+		}
+
+		result = append(result, list...)
+
+		if len(list) < int(limit) {
+			break
+		}
+		offset += limit
+	}
+
+	return result, nil
+}
+
+/*
+	searchProfile
+	Search profile model from tableStore with request body
+*/
+func searchProfile(tb *env.TablestoreClient, req MergeProfileReq, offset int32) ([]*profilemodel.Model, int64, error) {
+	if len(req.ProfileType) == 0 {
+		return nil, 0, errors.New("lack of profile_type")
+	}
+	if req.StartTime > req.EndTime {
+		return nil, 0, errors.New("time range wrong")
+	}
+
+	boolQuery := search.BoolQuery{
+		MustQueries: []search.Query{
+			&search.TermQuery{
+				FieldName: profilemodel.ProfileType,
+				Term:      req.ProfileType,
+			},
+			&search.RangeQuery{
+				FieldName:    profilemodel.CreateTime,
+				From:         req.StartTime,
+				To:           req.EndTime,
+				IncludeLower: true,
+				IncludeUpper: true,
+			},
+		},
+	}
+
+	if len(req.Service) > 0 {
+		boolQuery.MustQueries = append(boolQuery.MustQueries,
+			&search.TermQuery{
+				FieldName: profilemodel.Service,
+				Term:      req.Service,
+			},
+		)
+	}
+
+	if len(req.Ip) > 0 {
+		boolQuery.MustQueries = append(boolQuery.MustQueries,
+			&search.TermQuery{
+				FieldName: profilemodel.IP,
+				Term:      req.Ip,
+			},
+		)
+	}
+
+	if len(req.Host) > 0 {
+		boolQuery.MustQueries = append(boolQuery.MustQueries,
+			&search.TermQuery{
+				FieldName: profilemodel.Host,
+				Term:      req.Host,
+			},
+		)
+	}
+
+	sort := search.Sort{
+		Sorters: []search.Sorter{
+			&search.FieldSort{
+				FieldName: profilemodel.CreateTime,
+				Order:     search.SortOrder_ASC.Enum(),
+			},
+		},
+	}
+
+	searchQuery := search.NewSearchQuery()
+	searchQuery.SetLimit(limit)
+	searchQuery.SetQuery(&boolQuery)
+	searchQuery.SetSort(&sort)
+	if offset > 0 {
+		searchQuery.SetOffset(offset)
+	} else {
+		searchQuery.SetGetTotalCount(true)
+	}
+
+	searchRequest := new(tablestore.SearchRequest)
+	searchRequest.SetTableName(tb.TableName)
+	searchRequest.SetIndexName(tb.TableName + "_idx")
+	searchRequest.SetColumnsToGet(&tablestore.ColumnsToGet{ReturnAll: true})
+	searchRequest.SetSearchQuery(searchQuery)
+
+	getRangeResp, err := tb.Client.Search(searchRequest)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var result []*profilemodel.Model
+	for _, row := range getRangeResp.Rows {
+		profileModel := unMarshalProfileRow(row)
+		result = append(result, profileModel)
+	}
+	return result, getRangeResp.TotalCount, nil
+}
+
+/*
+	unMarshalProfileRow
+	unmarshal information from tableStore row
+*/
+func unMarshalProfileRow(row *tablestore.Row) *profilemodel.Model {
+	result := new(profilemodel.Model)
+	for _, v := range row.Columns {
+		switch v.ColumnName {
+		case profilemodel.CreateTime:
+			result.CreateTime = v.Value.(int64)
+		case profilemodel.GoVersion:
+			result.GoVersion = v.Value.(string)
+		case profilemodel.Host:
+			result.Host = v.Value.(string)
+		case profilemodel.IP:
+			result.IP = v.Value.(string)
+		case profilemodel.ProfileType:
+			result.ProfileType = v.Value.(string)
+		case profilemodel.SendTime:
+			result.SendTime = v.Value.(int64)
+		case profilemodel.Service:
+			result.Service = v.Value.(string)
+		case profilemodel.ServiceVersion:
+			result.ServiceVersion = v.Value.(string)
+		case profilemodel.ObjectName:
+			result.ObjectName = v.Value.(string)
+		case profilemodel.Size:
+			result.Size = v.Value.(int64)
+		}
+	}
+	return result
 }

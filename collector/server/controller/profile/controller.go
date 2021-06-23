@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -466,28 +467,26 @@ func searchProfile(tb *env.TablestoreClient, req MergeProfileReq, offset int32) 
 */
 func unMarshalProfileRow(row *tablestore.Row) *profilemodel.Model {
 	result := new(profilemodel.Model)
-	for _, v := range row.Columns {
-		switch v.ColumnName {
-		case profilemodel.CreateTime:
-			result.CreateTime = v.Value.(int64)
-		case profilemodel.GoVersion:
-			result.GoVersion = v.Value.(string)
-		case profilemodel.Host:
-			result.Host = v.Value.(string)
-		case profilemodel.IP:
-			result.IP = v.Value.(string)
-		case profilemodel.ProfileType:
-			result.ProfileType = v.Value.(string)
-		case profilemodel.SendTime:
-			result.SendTime = v.Value.(int64)
-		case profilemodel.Service:
-			result.Service = v.Value.(string)
-		case profilemodel.ServiceVersion:
-			result.ServiceVersion = v.Value.(string)
-		case profilemodel.ObjectName:
-			result.ObjectName = v.Value.(string)
-		case profilemodel.Size:
-			result.Size = v.Value.(int64)
+	ve := reflect.ValueOf(result).Elem()
+	te := reflect.TypeOf(result).Elem()
+	ret := make(map[string]reflect.Value)
+	for i := 0; i < te.NumField(); i++ {
+		tag := te.Field(i).Tag.Get("ots")
+		ret[tag] = ve.Field(i)
+	}
+	for _, column := range row.Columns {
+		v, ok := ret[column.ColumnName]
+		if !ok {
+			continue
+		}
+		if !v.IsValid() || !v.CanSet() {
+			continue
+		}
+		switch v.Kind() {
+		case reflect.String:
+			v.SetString(column.Value.(string))
+		case reflect.Int64:
+			v.SetInt(column.Value.(int64))
 		}
 	}
 	return result

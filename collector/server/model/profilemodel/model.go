@@ -15,15 +15,15 @@ const (
 )
 
 type Model struct {
-	ProfileId      string `json:"profile_id"`
-	Service        string `json:"service"`
-	ServiceVersion string `json:"service_version"`
-	Host           string `json:"host"`
-	IP             string `json:"ip"`
-	GoVersion      string `json:"go_version"`
-	ProfileType    string `json:"profile_type"`
-	SendTime       int64  `json:"send_time"`
-	CreateTime     int64  `json:"create_time"`
-	ObjectName     string `json:"object_name"`
-	Size           int64  `json:"size"`
+	ProfileId      string `ots:"profile_id"`
+	Service        string `ots:"service"`
+	ServiceVersion string `ots:"service_version"`
+	Host           string `ots:"host"`
+	IP             string `ots:"ip"`
+	GoVersion      string `ots:"go_version"`
+	ProfileType    string `ots:"profile_type"`
+	SendTime       int64  `ots:"send_time"`
+	CreateTime     int64  `ots:"create_time"`
+	ObjectName     string `ots:"object_name"`
+	Size           int64  `ots:"size"`
 }

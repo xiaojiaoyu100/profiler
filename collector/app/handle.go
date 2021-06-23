@@ -25,9 +25,9 @@ import (
 
 func initHttpServer(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
-		a.Logger().Info("about to start server")
-
 		dataID := serverconfig.DataID
+
+		a.Logger().Info(fmt.Sprintf("start to get config: group = %s, dataID = %s", a.ACMGroup(), dataID))
 
 		cc, ok := coll[info.Info{
 			Group:  a.ACMGroup(),
@@ -76,6 +76,8 @@ func initHttpServer(a *App) observer.Handler {
 func initTablestoreClient(a *App) observer.Handler {
 	return func(coll map[info.Info]*config.Config) {
 		dataID := tablestoreconfig.DataID
+
+		a.Logger().Info(fmt.Sprintf("start to get config: group = %s, dataID = %s", a.ACMGroup(), dataID))
 
 		cc, ok := coll[info.Info{
 			Group:  a.ACMGroup(),

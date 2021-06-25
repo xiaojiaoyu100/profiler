@@ -5,14 +5,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"reflect"
+	"runtime"
 	"strconv"
 	"time"
 
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore"
 	"github.com/aliyun/aliyun-tablestore-go-sdk/v5/tablestore/search"
+	"github.com/cavaliercoder/grab"
 	"github.com/gin-gonic/gin"
 	gprofile "github.com/google/pprof/profile"
 	"github.com/xiaojiaoyu100/profiler/collector/env"
@@ -20,7 +21,6 @@ import (
 	"github.com/xiaojiaoyu100/profiler/collector/server/model/profilemodel"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 )
 
 type ReceiveProfileReq struct {
@@ -168,20 +168,15 @@ type MergeProfileReq struct {
 }
 
 type mergeProfileDetail struct {
-	Host  string `json:"host"`
-	Url   string `json:"url"`
-	Count int    `json:"count"`
-}
-
-type HostProfile struct {
-	Host    string
-	Profile *gprofile.Profile
+	Url          string `json:"url"`
+	ProfileCount int    `json:"profile_count"`
 }
 
 func MergeProfile(c *gin.Context) {
 	logger := middleware.Env(c).Logger
 	var req MergeProfileReq
 	if err := c.BindJSON(&req); err != nil {
+		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 
@@ -206,117 +201,107 @@ func MergeProfile(c *gin.Context) {
 		return
 	}
 
-	group, _ := errgroup.WithContext(c)
-
-	var hostProfileList []HostProfile
+	var reqs []*grab.Request
 	for _, profileModel := range profileModelList {
-		if len(profileModel.ObjectName) == 0 {
-			continue
+		url := downloadPath(ossClient.Bucket, ossClient.EndPoint, profileModel.ObjectName)
+		req, err := grab.NewRequest("", url)
+		if err != nil {
+			c.AbortWithStatus(http.StatusInternalServerError)
+			return
 		}
-
-		pfm := profileModel
-		group.Go(func() error {
-			body, err := bucket.GetObject(pfm.ObjectName)
-			if err != nil {
-				logger().WithRequestId(c).Info("get object err",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			b, err := ioutil.ReadAll(body)
-			if err != nil {
-				logger().WithRequestId(c).Info("read all err",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			pprofProfile, err := gprofile.ParseData(b)
-			if err != nil {
-				logger().WithRequestId(c).Info("profile parse err",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			hostProfileList = append(hostProfileList, HostProfile{
-				Host:    pfm.Host,
-				Profile: pprofProfile,
-			})
-
-			return nil
-		})
+		req.NoStore = true
+		reqs = append(reqs, req)
 	}
 
-	err = group.Wait()
+	var profileList []*gprofile.Profile
+
+	responses := grab.NewClient().DoBatch(runtime.NumCPU()*2, reqs...)
+Loop:
+	for i := 0; i < len(reqs); i++ {
+		select {
+		case ossResp := <-responses:
+			if ossResp == nil {
+				break Loop
+			}
+			if ossResp.HTTPResponse == nil {
+				break Loop
+			}
+
+			func() {
+				b, err := ossResp.Bytes()
+				if err != nil {
+					logger().WithRequestId(c).Info("oss resp bytes",
+						zap.Reflect("req", req),
+						zap.Error(err))
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+
+				r, err := ossResp.Open()
+				if err != nil {
+					logger().WithRequestId(c).Info("oss resp open",
+						zap.Reflect("req", req),
+						zap.Error(err))
+					return
+				}
+				defer r.Close()
+
+				pprofProfile, err := gprofile.ParseData(b)
+				if err != nil {
+					logger().WithRequestId(c).Info("profile parse err",
+						zap.Reflect("req", req),
+						zap.Error(err))
+					c.AbortWithStatus(http.StatusInternalServerError)
+					return
+				}
+				profileList = append(profileList, pprofProfile)
+			}()
+		}
+	}
+
+	mergeProfile, err := gprofile.Merge(profileList)
 	if err != nil {
+		logger().WithRequestId(c).Info("profile merge err",
+			zap.Reflect("req", req),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
-	hostProfileListMap := make(map[string][]*gprofile.Profile)
-	for _, hostProfile := range hostProfileList {
-		hostProfileListMap[hostProfile.Host] = append(hostProfileListMap[hostProfile.Host], hostProfile.Profile)
-	}
-
-	var resp struct {
-		List  []*mergeProfileDetail `json:"list"`
-		Total int                   `json:"total"`
-	}
-	resp.List = make([]*mergeProfileDetail, 0)
-
-	for host, pprofProfileList := range hostProfileListMap {
-		h := host
-		ppl := pprofProfileList
-		group.Go(func() error {
-			mergeProfile, err := gprofile.Merge(ppl)
-			if err != nil {
-				logger().WithRequestId(c).Info("profile merge err",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			buf := new(bytes.Buffer)
-			err = mergeProfile.Write(buf)
-			if err != nil {
-				logger().WithRequestId(c).Info("profile write err",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			newProfileID := primitive.NewObjectID().Hex()
-			objectName := UploadPath(ossClient.PathPrefix, req.Service, req.ProfileType, newProfileID)
-
-			err = bucket.PutObject(objectName, buf)
-			if err != nil {
-				logger().WithRequestId(c).Info("fail to upload",
-					zap.Reflect("req", req),
-					zap.Error(err))
-				return err
-			}
-
-			ossUrl := fmt.Sprintf("https://%s.%s/%s", ossClient.Bucket, ossClient.EndPoint, objectName)
-
-			resp.List = append(resp.List, &mergeProfileDetail{
-				Host:  h,
-				Url:   ossUrl,
-				Count: len(ppl),
-			})
-			resp.Total += len(ppl)
-
-			return nil
-		})
-	}
-	err = group.Wait()
+	buf := new(bytes.Buffer)
+	err = mergeProfile.Write(buf)
 	if err != nil {
+		logger().WithRequestId(c).Info("profile write err",
+			zap.Reflect("req", req),
+			zap.Error(err))
 		c.AbortWithStatus(http.StatusInternalServerError)
 		return
 	}
 
+	newProfileID := primitive.NewObjectID().Hex()
+	objectName := UploadPath(ossClient.PathPrefix, req.Service, req.ProfileType, newProfileID)
+
+	err = bucket.PutObject(objectName, buf)
+	if err != nil {
+		logger().WithRequestId(c).Info("fail to upload",
+			zap.Reflect("req", req),
+			zap.Error(err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	var resp = mergeProfileDetail{
+		Url:          downloadPath(ossClient.Bucket, ossClient.EndPoint, objectName),
+		ProfileCount: len(profileList),
+	}
 	c.AbortWithStatusJSON(http.StatusOK, resp)
+}
+
+func downloadPath(bucket, endPoint, objectName string) string {
+	return fmt.Sprintf("https://%s.%s/%s",
+		bucket,
+		endPoint,
+		objectName)
 }
 
 const limit = int32(100)
@@ -373,6 +358,12 @@ func getProfileModelList(tb *env.TablestoreClient, req MergeProfileReq) ([]*prof
 	Search profile model from tableStore with request body
 */
 func searchProfile(tb *env.TablestoreClient, req MergeProfileReq, offset int32) ([]*profilemodel.Model, int64, error) {
+	if len(req.Service) > 0 {
+
+	}
+	if len(req.Host) == 0 {
+		return nil, 0, errors.New("lack of host")
+	}
 	if len(req.ProfileType) == 0 {
 		return nil, 0, errors.New("lack of profile_type")
 	}

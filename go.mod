@@ -6,6 +6,7 @@ require (
 	github.com/aliyun/aliyun-oss-go-sdk v2.1.8+incompatible
 	github.com/aliyun/aliyun-tablestore-go-sdk/v5 v5.0.6
 	github.com/baiyubin/aliyun-sts-go-sdk v0.0.0-20180326062324-cfa1a18b161f // indirect
+	github.com/cavaliercoder/grab v1.0.1-0.20201108051000-98a5bfe305ec
 	github.com/gin-gonic/gin v1.7.2
 	github.com/golang/protobuf v1.3.3
 	github.com/google/pprof v0.0.0-20210609004039-a478d1d731e9
@@ -15,6 +16,5 @@ require (
 	github.com/xiaojiaoyu100/cast v1.4.0
 	go.mongodb.org/mongo-driver v1.5.3
 	go.uber.org/zap v1.17.0
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/sys v0.0.0-20210510120138-977fb7262007 // indirect
 )

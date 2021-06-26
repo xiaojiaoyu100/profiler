@@ -306,10 +306,7 @@ func downloadPath(bucket, endPoint, objectName string) string {
 
 const limit = int32(100)
 
-/*
-	getProfileModelList
-	Batch get profile model from tableStore
-*/
+// getProfileModelList batch get profile model from tableStore
 func getProfileModelList(tb *env.TablestoreClient, req MergeProfileReq) ([]*profilemodel.Model, error) {
 	result, total, err := searchProfile(tb, req, 0)
 	if err != nil {
@@ -353,10 +350,7 @@ func getProfileModelList(tb *env.TablestoreClient, req MergeProfileReq) ([]*prof
 	return result, nil
 }
 
-/*
-	searchProfile
-	Search profile model from tableStore with request body
-*/
+// searchProfile search profile model from tableStore with request body
 func searchProfile(tb *env.TablestoreClient, req MergeProfileReq, offset int32) ([]*profilemodel.Model, int64, error) {
 	if len(req.Service) > 0 {
 
@@ -452,10 +446,7 @@ func searchProfile(tb *env.TablestoreClient, req MergeProfileReq, offset int32) 
 	return result, getRangeResp.TotalCount, nil
 }
 
-/*
-	unMarshalProfileRow
-	unmarshal information from tableStore row
-*/
+// unMarshalProfileRow unmarshal information from tableStore row
 func unMarshalProfileRow(row *tablestore.Row) *profilemodel.Model {
 	result := new(profilemodel.Model)
 	ve := reflect.ValueOf(result).Elem()
